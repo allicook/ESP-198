@@ -1,0 +1,337 @@
+---
+title: "CommunityProfile"
+author: "Allison Cook"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+
+
+What modes of transportation do people who live in the neighborhood use get around the city?
+ 
+
+```{r cars}
+library(tidyverse)
+library(tidycensus)
+
+
+sac_cpd <- get_decennial(geography = "tract", table = "P2", year = 2020, state = "CA", cache = TRUE, county = "Sacramento County", tract = c(18,37,28,37,44.01,44.02))
+
+oak_cpd <- subset(sac_cpd, NAME %in% c("Census Tract 18, Sacramento County, California","Census Tract 27, Sacramento County, California", "Census Tract 28, Sacramento County, California", "Census Tract 37, Sacramento County, California","Census Tract 44.01, Sacramento County, California", "Census Tract 44.02, Sacramento County, California"),)
+
+oak_data <- oak_cpd %>% 
+  mutate(race = case_when(
+    str_detect(variable, "_001N") ~ "Total",
+    str_detect(variable, "_005N") ~ "White",
+    str_detect(variable, "_006N") ~ "Black",
+    str_detect(variable, "_007N") ~ "American Indian and Alaska Native alone",
+    str_detect(variable, "_008N") ~ "Asian",
+    str_detect(variable, "_009N") ~ "Native Hawaiian and Other Pacific Islander alone",
+    str_detect(variable, "_010N") ~ "Other Races",
+    str_detect(variable, "_002N") ~ "Latino",
+    TRUE ~ NA_character_
+  )) %>% 
+  filter(!is.na(race)) 
+
+oak_data <- oak_data[,-c(1:2)]
+oak_data_totals <- oak_data %>%
+  group_by(variable, race)  %>%
+  summarise(across(c(value), sum), .groups = 'drop')
+
+ total_pop <- oak_data_totals %>% 
+  filter(race == "Total") %>% 
+  pull(value)
+total_pop
+
+oak_data_totals <- oak_data_totals %>% 
+  mutate(pct = value / total_pop)
+oak_data_totals
+
+
+
+
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+
+oak_data_totals <- oak_data_totals[-1,-1] %>% 
+  mutate(race = fct_reorder(race, pct, .desc = TRUE))
+
+ggplot(oak_data_totals, aes(race, pct)) + 
+  geom_col(fill = "cornflowerblue") +
+  geom_text(aes(label = scales::label_percent()(pct)),
+            vjust = -0.5) +
+  labs(x = "Race/ethnicity", y = "", 
+       title = "Race/ethnicity in Oak Park Neighborhood",
+       caption = "Source: Census 2020; Table P2") +
+  theme_classic() +
+  theme(axis.text.y = element_blank(), 
+        axis.ticks.y = element_blank(),
+        axis.line.y = element_blank())
+```
+```{r}
+sac_trans <- get_acs("tract", table = "B08141", state = "CA",
+                   county = "Sacramento", cache = TRUE)
+
+
+oak_trans <- subset(sac_trans, NAME %in% c("Census Tract 18, Sacramento County, California","Census Tract 27, Sacramento County, California", "Census Tract 28, Sacramento County, California", "Census Tract 37, Sacramento County, California","Census Tract 44.01, Sacramento County, California", "Census Tract 44.02, Sacramento County, California"),)
+
+
+```
+```{r}
+oak_trans <- oak_trans %>% 
+  mutate(Transportation = case_when(
+    str_detect(variable, "_001") ~ "Total",
+    str_detect(variable, "_031") ~ "Worked from home",
+    str_detect(variable, "_021") ~ "Walked",
+    str_detect(variable, "_026") ~ "Taxicab, motorcycle, bicycle, or other means",
+    str_detect(variable, "_016") ~ "Public transportation (excluding taxicab)",
+    str_detect(variable, "_011") ~ "Car, truck, or van - carpooled",
+    str_detect(variable, "_006") ~ "Car, truck, or van - drove alone",
+    TRUE ~ NA_character_
+  )) %>% 
+  filter(!is.na(Transportation))  %>% 
+  mutate(moe = if_else(is.na(moe), 0, moe)) 
+
+
+
+oak_trans_data <- oak_trans[,-c(1:2)]
+oak_data_totals <- oak_trans_data %>%
+  group_by(variable, Transportation)  %>%
+  summarise(across(c(estimate, moe), sum), .groups = 'drop')
+
+total_pop <- oak_data_totals %>% 
+  filter(Transportation == "Total") %>% 
+  pull(estimate)
+
+oak_trans_totals <- oak_data_totals %>% 
+  mutate(pct = estimate / total_pop)  %>% 
+  mutate(moe_pct = moe / total_pop)
+
+
+oak_trans_totals <- oak_trans_totals[-1,-1] %>% 
+  mutate(Transportation = fct_reorder(Transportation, pct, .desc = TRUE))
+
+
+CommuterOakPark<- ggplot(oak_trans_totals, aes(Transportation, pct)) + 
+  geom_col(fill = "orchid4") +
+  geom_errorbar(aes(ymin = pct - moe_pct, ymax = pct + moe_pct,
+                    width = 0.1), color="darkgrey") +
+  geom_text(aes(label = scales::label_percent()(pct)),
+            vjust = -2.5, position=position_dodge(width = 0.9) )+
+    scale_x_discrete(labels =  scales::label_wrap(10)) +
+  labs(x = "Commuter Transportation", y = "", 
+       title = "Commuter Transportation in Oak Park Neighborhood",
+       caption = "Source: ACS 2021 5-year estimates; Table B08141") +
+  theme_classic() +
+  theme(axis.text.y = element_blank(), 
+        axis.ticks.y = element_blank(),
+        axis.line.y = element_blank())
+ggsave("./Figures/CommuterOakPark.png", width=7, height=5)
+
+
+
+
+
+```
+
+Majority of workers, about 66%, residing in Oak Park Neighborhood rely on individual vehicles to commute to and from work. Overall, about 84.72% of residents rely on some vehicle, including carpools and public transportation, to commute. From the graph, "Commuter Transportation in Oak Park Neighborhood", its evident there are high margins of errors in the ACS 5 year estimates. As the percentages go down, the bigger affect the MOE has on them. This makes sense as the samples are smaller, there will be a greater error in the accuracy of the estimate. However, despite these uncertainties, majority of residents drive alone to work.
+
+Compared to Sacramento County, Oak Park residents use public transportation, walking, or other means of travel more often than Sacramento County residents at large. Overall, Sacramento residents use individual vehicles to commute to and from work about 6% more than Oak Park, although majority of both communities commute this way. 
+
+
+```{r}
+county_trans <- get_acs("county", table = "B08141", state = "CA",
+                   county = "Sacramento", cache = TRUE)
+
+
+county_trans <- county_trans %>% 
+  mutate(Transportation = case_when(
+    str_detect(variable, "_001") ~ "Total",
+    str_detect(variable, "_031") ~ "Worked from home",
+    str_detect(variable, "_021") ~ "Walked",
+    str_detect(variable, "_026") ~ "Taxicab, motorcycle, bicycle, or other means",
+    str_detect(variable, "_016") ~ "Public transportation (excluding taxicab)",
+    str_detect(variable, "_011") ~ "Car, truck, or van - carpooled",
+    str_detect(variable, "_006") ~ "Car, truck, or van - drove alone",
+    TRUE ~ NA_character_
+  )) %>% 
+  filter(!is.na(Transportation))  %>% 
+  mutate(moe = if_else(is.na(moe), 0, moe)) 
+
+
+
+county_trans_data <- county_trans[,-c(1:2)]
+
+total_pop <- county_trans_data %>% 
+  filter(Transportation == "Total") %>% 
+  pull(estimate)
+
+county_trans_totals <- county_trans_data %>% 
+  mutate(pct = estimate / total_pop)  %>% 
+  mutate(moe_pct = moe / total_pop)
+
+
+county_trans_totals <- county_trans_totals[-1,-1] %>% 
+  mutate(Transportation = fct_reorder(Transportation, pct, .desc = TRUE))
+
+
+CommuterCounty<- ggplot(county_trans_totals, aes(Transportation, pct)) + 
+  geom_col(fill = "steelblue4") +
+  geom_errorbar(aes(ymin = pct - moe_pct, ymax = pct + moe_pct,
+                    width = 0.1), color="darkgrey") +
+  geom_text(aes(label = scales::label_percent()(pct)),
+            vjust = -0.5, position=position_dodge(width = 0.9) )+
+    scale_x_discrete(labels =  scales::label_wrap(10)) +
+  labs(x = "Commuter Transportation", y = "", 
+       title = "Commuter Transportation in Sacramento County",
+       caption = "Source: ACS 2021 5-year estimates; Table B08141") +
+  theme_classic() +
+  theme(axis.text.y = element_blank(), 
+        axis.ticks.y = element_blank(),
+        axis.line.y = element_blank())
+ggsave("./Figures/CommuterCounty.png", width=7, height=5)
+
+
+
+```
+
+
+```{r}
+oak_tracts<- subset(oak_trans, oak_trans$Transportation != "Total")
+oak_tracts$NAME <- gsub(', Sacramento County, California','', oak_tracts$NAME)
+
+oak_tracts$Transportation <- factor(oak_tracts$Transportation, levels=c("Worked from home", "Walked", "Taxicab, motorcycle, bicycle, or other means", "Public transportation (excluding taxicab)","Car, truck, or van - carpooled","Car, truck, or van - drove alone"))
+
+track_totals <- oak_trans %>% 
+  filter(Transportation == "Total") %>% 
+  pull(estimate)
+
+p18<-oak_tracts[1:6,4] / track_totals[1]
+p27<-oak_tracts[7:12,4] / track_totals[2]
+p28<-oak_tracts[13:18,4] / track_totals[3]
+p37<-oak_tracts[19:24,4] / track_totals[4]
+p44.01<-oak_tracts[25:30,4] / track_totals[5]
+p44.02<-oak_tracts[31:36,4] / track_totals[6]
+
+mp18<-(oak_tracts[1:6,5] / track_totals[1])
+mp27<-oak_tracts[7:12,5] / track_totals[2]
+mp28<-oak_tracts[13:18,5] / track_totals[3]
+mp37<-oak_tracts[19:24,5] / track_totals[4]
+mp44.01<-oak_tracts[25:30,5] / track_totals[5]
+mp44.02<-oak_tracts[31:36,5] / track_totals[6]
+
+pct <-as.data.frame(bind_rows(p18,p27,p28,p37,p44.01,p44.02))
+moe_pct <- as.data.frame(bind_rows(mp18,mp27,mp28,mp37,mp44.01,mp44.02))
+
+oak_tracts$pct <- pct$estimate
+oak_tracts$moe_pct <- moe_pct$estimate
+
+oak_tracts$pct<- as.numeric(format(oak_tracts$pct, digits = 1))
+oak_tracts<- subset(oak_tracts, oak_tracts$pct != "0.000")
+
+
+CommuterTracts <- oak_tracts %>% 
+ggplot(  aes(x = NAME,
+                  y = estimate,
+                  fill = Transportation)) +
+  geom_bar(position = "fill", stat = "identity") +   scale_x_discrete(labels =  scales::label_wrap(10)) +   scale_y_continuous(labels = scales::percent) + scale_fill_brewer(palette = "Set1") + 
+    geom_text(data=oak_tracts, aes(y=estimate,label= paste0(pct*100,"%")),
+              position=position_fill(vjust=0.5), size = 2) + 
+  labs(x = "Oak park Census Tracts", y = "Frequency of Modes of Transportation", 
+       title = "Frequency of Commuter Transportation Modes per Census Tracts in Oak Park",
+       caption = "Source: ACS 2021 5-year estimates; Table B08141") + theme_classic() + theme(
+  plot.caption = element_text(hjust = 6)
+  )
+ggsave("./Figures/CommuterTracts.png", width=7, height=5)
+
+
+county <- get_acs("county", table = "B08141", state = "CA",
+                   county = "Sacramento", cache = TRUE)
+
+
+vehicleowner<- county %>% 
+  mutate(Vehicle = case_when(
+    str_detect(variable, "_001") ~ "Total",
+    str_detect(variable, "_002") ~ "No Vehicle",
+    TRUE ~ NA_character_
+  )) %>% 
+  filter(!is.na(Vehicle))  %>% 
+  mutate(moe = if_else(is.na(moe), 0, moe)) 
+
+
+
+tracts <- get_acs("tract", table = "B08141", state = "CA",
+                   county = "Sacramento", cache = TRUE)
+
+
+oak_tracts <- subset(tracts, NAME %in% c("Census Tract 18, Sacramento County, California","Census Tract 27, Sacramento County, California", "Census Tract 28, Sacramento County, California", "Census Tract 37, Sacramento County, California","Census Tract 44.01, Sacramento County, California", "Census Tract 44.02, Sacramento County, California"),)
+
+
+oak_vehicle <- oak_tracts %>% 
+  mutate(Vehicle = case_when(
+    str_detect(variable, "_001") ~ "Total",
+    str_detect(variable, "_002") ~ "No Vehicle",
+    TRUE ~ NA_character_
+  )) %>% 
+  filter(!is.na(Vehicle))  %>% 
+  mutate(moe = if_else(is.na(moe), 0, moe)) 
+
+
+oak_vehicle <- oak_vehicle[,-c(1:2)]
+oak_vehicle_totals <- oak_vehicle %>%
+  group_by(variable, Vehicle)  %>%
+  summarise(across(c(estimate, moe), sum), .groups = 'drop')
+oak_vehicle_totals[,-1]
+vehicleowner[,4:6]
+
+
+sac_data <- tibble(
+  Community = c("Sacramento County", "Oak Park"),
+  "Total Commuters" = c(713514, 11479),
+  "Without Vehicle" = c(17397, 598),
+  pct = c(0.0244, 0.0521))
+
+Vehicles<- ggplot(sac_data, aes(Community, pct, fill = Community)) +     # Manually specifying colors
+  geom_bar(stat = "identity")  + scale_fill_manual(values = c("Sacramento County" = "steelblue4",
+                               "Oak Park" = "orchid4"
+  )) + geom_text(aes(label = scales::label_percent()(pct)),
+            vjust = -0.5) +
+  labs(x = "Community", y = "", 
+       title = "% of Commuters Without Vehicles",
+       caption = "Source: ACS 2021 5-year estimates; Table B08141") +
+  theme_classic() +
+  theme(axis.text.y = element_blank(), 
+        axis.ticks.y = element_blank(),
+        axis.line.y = element_blank(),
+        legend.position = "none")  
+ggsave("./Figures/Vehicles.png", width=7, height=5)
+
+
+ggpubr::ggarrange(CommuterCounty, Vehicles, ncol = 1, nrow = 2)
+```
+
+Examining the "Frequency of Commuter Transportation Modes per Census Tracts in Oak Park" graph, we observe the relative distribution of commuting methods across each census tract in Oak Park.Across all tracts, the majority of commuters drive alone to work.The three southern tracts (37, 44.01, and 44.02) have the highest percentages of individual vehicle transportation, ranging from about 10 to 20% more than the other three northern tracts.
+ Although driving alone is the primary commuting mode for Oak Park residents, there are few other residents who rely on other means.Census tract 28 has the largest relative frequency for public transportation use, and Tract 27 has the highest percentage of people who work from home. Notably, Tract 18 has the highest proportion of walking commuters, with about 7.5% of its residents commuting on foot, while other tracts have less than 3%.
+
+
+
+
+
+
+
+
+
+
+
+
