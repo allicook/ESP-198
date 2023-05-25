@@ -1,0 +1,11 @@
+
+
+#Categorizes aqi by good, moderate, etc.
+index <- cut(AQI$pm2_5NowCastAqi.best, br=c(-1,50,100,150,200,300,500), labels=c("Good","Moderate","Unhealthy for Sensitive Groups","Unhealthy", "Very Unhealthy", "Hazardous"))
+AQI2=data.frame(AQI,index)
+AQI2
+sourceid_column <- AQI$sourceid
+SRCid_unique <- unique(sourceid_column)
+
+
+
